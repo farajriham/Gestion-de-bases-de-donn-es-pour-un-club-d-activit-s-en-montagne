@@ -1,0 +1,166 @@
+/*Affichage Refuges*/
+ SELECT R.NOMREF,R.SECTEURGEO,R.DATE_OUVERTURE,
+                   (R.NB_PLACES_REPAS - COALESCE(RESERV.PLACEREPASOCCUP, 0)) AS PLACEREPASDISPO,
+                    (NB_PLACES_DORMIR - COALESCE(NUITES.PLACEDORMIROCCUP, 0)) AS PLACEDORMIRDISPO
+                FROM 
+                    REFUGES R
+                LEFT JOIN 
+                    (SELECT EMAILREF, COUNT(IDRES) AS PLACEREPASOCCUP FROM RESERVEREFUGE  +
+                    WHERE (DATE_RES + NB_NUITS >= CURRENT_DATE AND CURRENT_DATE >= DATE_RES) AND NB_REPAS>0 GROUP BY EMAILREF ) RESERV +
+                ON  +
+                    R.EMAILREF = RESERV.EMAILREF +
+                LEFT JOIN  +
+                    (SELECT EMAILREF, COUNT(IDRES) AS PLACEDORMIROCCUP FROM RESERVEREFUGE  +
+                    WHERE (DATE_RES + NB_NUITS >= CURRENT_DATE AND CURRENT_DATE >= DATE_RES) AND NB_NUITS >0 GROUP BY EMAILREF) NUITES +
+                ON  +
+                    R.EMAILREF = NUITES.EMAILREF
+                ORDER BY PLACEDORMIRDISPO ASC ,PLACEREPASDISPO ASC, R.DATE_OUVERTURE ASC;
+
+/*Affichage formation*/
+ SELECT 
+                    F.NOMFORM AS NomFormation, 
+                    FA.NOMACT AS Activite, 
+                    F.DATE_DEBUT AS DateDebut, 
+                    F.DUREE AS Duree, 
+                    F.NBPLACES - COALESCE(COUNT(RF.IDRES),0) AS PlacesRestantes 
+                FROM 
+                    FORMATION F 
+                JOIN 
+                    FORMATIONACTIVITE FA ON F.IDFORM = FA.IDFORM AND F.ANNEEFORM = FA.ANNEEFORM 
+                LEFT JOIN 
+                    RESERVEFORMATION RF ON F.IDFORM = RF.IDFORM AND F.ANNEEFORM = RF.ANNEEFORM 
+                GROUP BY 
+                    F.IDFORM, F.ANNEEFORM, F.NOMFORM, FA.NOMACT, F.DATE_DEBUT, F.DUREE, F.NBPLACES 
+                ORDER BY 
+                    F.DATE_DEBUT ASC, F.NOMFORM ASC, FA.NOMACT ASC;
+
+/*Affichage matériel*/
+ SELECT TF.MARQUE,TF.MODELE,TF.ANNEE,TF.NBPIECES,TF.PIECESDISPO , MUA.NOMACT FROM 
+                (SELECT T.MARQUE,T.MODELE,T.ANNEE ,LM.NBPIECES,(LM.NBPIECES -T.PIECESPERDUES-T.PIECESRESERVEES) AS PIECESDISPO 
+                FROM 
+                (SELECT T2.MARQUE,T2.MODELE,T2.ANNEE,COALESCE(T2.PIECESPERDUES,0) AS PIECESPERDUES ,COALESCE(T3.PIECESRESERVEES,0) AS PIECESRESERVEES 
+                FROM 
+                (SELECT T1.MARQUE,T1.MODELE,T1.ANNEE,COALESCE(SUM(L.NBPIECESPERDUES),0) AS PIECESPERDUES 
+                FROM 
+                ( 
+                (SELECT MARQUE,MODELE,ANNEE FROM LOTMATERIEL ) 
+                MINUS 
+                (SELECT L.MARQUE,L.MODELE,L.ANNEE FROM LOTMATERIEL L 
+                JOIN MATERIELPERISSABLE MP 
+                ON L.MARQUE = MP.MARQUE 
+                AND L.MODELE = MP.MODELE 
+                AND L.ANNEE = MP.ANNEE 
+                WHERE MP.DATEPEREMPTION <= CURRENT_DATE 
+                ) 
+                ) T1 
+                LEFT JOIN LOCATIONS L 
+                ON L.MARQUE = T1.MARQUE 
+                AND L.MODELE = T1.MODELE 
+                AND L.ANNEE = T1.ANNEE 
+                GROUP BY T1.MARQUE,T1.MODELE,T1.ANNEE 
+                ) T2 
+                LEFT JOIN ( 
+                SELECT MARQUE,MODELE,ANNEE,SUM(NBPIECES) AS PIECESRESERVEES 
+                FROM LOCATIONS L 
+                WHERE L.DATERETOUR > current_date and current_date > L.DATERECUP 
+                GROUP BY MARQUE, MODELE, ANNEE 
+                ) T3 
+                ON T2.MARQUE = T3.MARQUE 
+                AND T2.MODELE = T3.MODELE 
+                AND T2.ANNEE = T3.ANNEE 
+                ) T 
+                LEFT JOIN LOTMATERIEL LM 
+                ON 
+                T.MARQUE = LM.MARQUE 
+                AND T.MODELE = LM.MODELE 
+                AND T.ANNEE = LM.ANNEE 
+                WHERE T.PIECESRESERVEES + T.PIECESPERDUES < LM.NBPIECES 
+                ) TF 
+                JOIN MATUTILACTIV MUA 
+                ON 
+                TF.MARQUE = MUA.MARQUE 
+                AND TF.MODELE = MUA.MODELE 
+                AND TF.ANNEE = MUA.ANNEE;
+
+/*Reservation Refuges*/
+SELECT  
+                    (NB_PLACES_DORMIR - COALESCE(NUITES.PLACEDORMIROCCUP, 0)) AS PLACEDORMIRDISPO 
+                FROM REFUGES R 
+                LEFT JOIN 
+                    (SELECT EMAILREF, COUNT(IDRES) AS PLACEDORMIROCCUP FROM RESERVEREFUGE 
+                    WHERE ( 
+                (DATE_RES + NB_NUITS >=? AND ?>=DATE_RES) OR (? + ?>= DATE_RES AND (? + ?<= DATE_RES +NB_NUITS)) OR (DATE_RES >=? AND ?+?>=DATE_RES) OR (? + ?>= DATE_RES + NB_NUITS AND  ?<= DATE_RES +NB_NUITS)) AND NB_NUITS>0 GROUP BY EMAILREF) NUITES 
+                ON 
+                    R.EMAILREF = NUITES.EMAILREF 
+                WHERE R.EMAILREF=?;
+
+SELECT 
+                    (NB_PLACES_REPAS - COALESCE(RESERV.PLACEREPASOCCUP, 0)) AS PLACEREPASDISPO 
+                FROM REFUGES R 
+                LEFT JOIN 
+                    (SELECT EMAILREF, COUNT(IDRES) AS PLACEREPASOCCUP FROM RESERVEREFUGE 
+                    WHERE ((DATE_RES + NB_NUITS >=? AND ?>=DATE_RES) OR (? + ?>= DATE_RES AND (? + ?<= DATE_RES +NB_NUITS)) OR (DATE_RES >=? AND ?+?>=DATE_RES) OR (? + ?>= DATE_RES + NB_NUITS AND  ?<= DATE_RES +NB_NUITS)) AND NB_REPAS>0 GROUP BY EMAILREF) RESERV 
+                ON 
+                    R.EMAILREF = RESERV.EMAILREF 
+                WHERE R.EMAILREF=?;
+
+/*Reservation Materiel*/
+
+ SELECT TF.MARQUE,TF.MODELE,TF.ANNEE,TF.PIECESDISPO  FROM 
+            (SELECT T.MARQUE,T.MODELE,T.ANNEE ,LM.NBPIECES,(LM.NBPIECES -T.PIECESPERDUES-T.PIECESRESERVEES) AS PIECESDISPO 
+            FROM 
+            (SELECT T2.MARQUE,T2.MODELE,T2.ANNEE,COALESCE(T2.PIECESPERDUES,0) AS PIECESPERDUES ,COALESCE(T3.PIECESRESERVEES,0) AS PIECESRESERVEES 
+            FROM 
+            (SELECT T1.MARQUE,T1.MODELE,T1.ANNEE,COALESCE(SUM(L.NBPIECESPERDUES),0) AS PIECESPERDUES 
+            FROM 
+            ( 
+            (SELECT MARQUE,MODELE,ANNEE FROM LOTMATERIEL ) 
+            MINUS 
+            (SELECT L.MARQUE,L.MODELE,L.ANNEE FROM LOTMATERIEL L 
+            JOIN MATERIELPERISSABLE MP 
+            ON L.MARQUE = MP.MARQUE 
+            AND L.MODELE = MP.MODELE 
+            AND L.ANNEE = MP.ANNEE 
+            WHERE MP.DATEPEREMPTION <= ? 
+            ) 
+            ) T1 
+            LEFT JOIN LOCATIONS L 
+            ON L.MARQUE = T1.MARQUE 
+            AND L.MODELE = T1.MODELE 
+            AND L.ANNEE = T1.ANNEE 
+            GROUP BY T1.MARQUE,T1.MODELE,T1.ANNEE 
+            ) T2 
+            LEFT JOIN ( 
+            SELECT MARQUE,MODELE,ANNEE,SUM(NBPIECES) AS PIECESRESERVEES 
+            FROM LOCATIONS L 
+            WHERE (L.DATERETOUR >=? AND ?>=L.DATERECUP) OR(?>=L.DATERECUP AND ?<=L.DATERETOUR) OR (L.DATERECUP >=? AND ?>=L.DATERECUP) OR (?>=L.DATERETOUR AND ?<=L.DATERETOUR)  
+            GROUP BY MARQUE, MODELE, ANNEE 
+            ) T3 
+            ON T2.MARQUE = T3.MARQUE 
+            AND T2.MODELE = T3.MODELE 
+            AND T2.ANNEE = T3.ANNEE 
+            ) T 
+            LEFT JOIN LOTMATERIEL LM 
+            ON 
+            T.MARQUE = LM.MARQUE 
+            AND T.MODELE = LM.MODELE 
+            AND T.ANNEE = LM.ANNEE 
+            WHERE T.PIECESRESERVEES + T.PIECESPERDUES < LM.NBPIECES 
+            ) TF 
+            WHERE TF.MARQUE=? AND TF.MODELE=? AND TF.ANNEE=? ;
+
+/*Reservation formation*/
+                SELECT ANNEEFORM,IDFORM FROM FORMATION WHERE nomForm =?;
+                SELECT F.NBPLACES FROM FORMATION F WHERE F.IDFORM =? AND F.ANNEEFORM =?;
+                SELECT COUNT(IDADHERENT) FROM RESERVEFORMATION RF WHERE RF.IDFORM =? AND RF.ANNEEFORM =?;
+
+
+
+
+
+
+
+
+
+
+
